@@ -1,23 +1,26 @@
 <?php
 
 // APP Specific Settings
-define('PUSH_ALERT_TITLE',					'');
-define('PUSH_ALERT_STRING',					'');
-define('PUSH_ALERT_SOUND',					'');
+define('PUSH_ALERT_TITLE',			'');
+define('PUSH_ALERT_STRING',			'');
+define('PUSH_ALERT_SOUND',			'');
 
 // Blackberry
-define('PUSH_BLACKBERRY_APPID',				'');
-define('PUSH_BLACKBERRY_PASSWORD',			'');
+define('PUSH_BLACKBERRY_APPID',			'');
+define('PUSH_BLACKBERRY_PASSWORD',		'');
 
 // Apple iOS
-define('PUSH_APNS_CERTIFICATE',				'');
+define('PUSH_APNS_CERTIFICATE',			'');
 define('PUSH_APNS_CERTIFICATE_PASSPHRASE',	'');
 
 // Android
-define('PUSH_GCM_KEY',						'');
-define('PUSH_FCM_KEY',						'');
-define('PUSH_FCM_CLICK_ACTION',				'');
+define('PUSH_GCM_KEY',				'');
+define('PUSH_FCM_KEY',				'');
+define('PUSH_FCM_CLICK_ACTION',			'');
 
+// Windows WNS
+define('PUSH_WNS_CLIENT_ID',			'');
+define('PUSH_WNS_CLIENT_SECRET'			'');
 
 class PushWrapper {
 	
@@ -229,34 +232,40 @@ class PushWrapper {
 							// Build the binary notification
 							$payload = chr(0) . pack('n', 32) . pack('H*', str_replace(' ', '', $deviceid)) . pack('n', strlen($json)) . $json;
 
-							// Send it to the server
-							$result = fwrite($stream, $payload, strlen($payload));
-
-							if (!$result) {
-								$response['error'] = 'Message not delivered';
+							if(strlen($payload) > 2048) {
+								$response['error'] = 'Payload is larger than 2048 bytes.';
 							} else {
-								$response['success'] = true;
-								$response['details'] = 'APNS Result not implemented yet. This is not an error.';
-								/* TODO: Recieve Apple Error Data
-								$apple_error = "";
-								$responseBinary = fread($fp, 6);
-								if ($responseBinary != false || strlen($responseBinary) == 6) {
-									//convert it from it's binary stream state and print. 
-									$apple_error = unpack('Ccommand/Cstatus_code/Nidentifier', $responseBinary);
-								}
+							
+								// Send it to the server
+								$result = fwrite($stream, $payload, strlen($payload));
 
-								// echo 'Message successfully delivered amar'.$message. PHP_EOL;
-								$debug_msg = "Packet Delivered to APNS of " . var_export($result, true) . " bytes.";
-								if($apple_error <> "") {
-									$debug_msg .= '<br />Error: ' . var_export($apple_error, true);
+								if (!$result) {
+									$response['error'] = 'Message not delivered';
 								} else {
-									$debug_msg .= '<br />No Errors from Apple';
+									$response['success'] = true;
+									$response['details'] = 'APNS Result not implemented yet. This is not an error.';
+									/* TODO: Recieve Apple Error Data
+									$apple_error = "";
+									$responseBinary = fread($fp, 6);
+									if ($responseBinary != false || strlen($responseBinary) == 6) {
+										//convert it from it's binary stream state and print. 
+										$apple_error = unpack('Ccommand/Cstatus_code/Nidentifier', $responseBinary);
+									}
+
+									// echo 'Message successfully delivered amar'.$message. PHP_EOL;
+									$debug_msg = "Packet Delivered to APNS of " . var_export($result, true) . " bytes.";
+									if($apple_error <> "") {
+										$debug_msg .= '<br />Error: ' . var_export($apple_error, true);
+									} else {
+										$debug_msg .= '<br />No Errors from Apple';
+									}
+									
+									/* OR 
+									// $response = stream_get_contents($stream);
+									// echo $response . '<hr />';
+									*/
 								}
 								
-								/* OR 
-								// $response = stream_get_contents($stream);
-								// echo $response . '<hr />';
-								*/
 							}
 							
 						}
@@ -343,7 +352,7 @@ class PushWrapper {
 							}
 							xml_parser_free($p);
 						} catch (Exception $e) {
-							$response['error'] = 'Curl failed: ' . curl_error($ch));
+							$response['error'] = 'XML Parse Error : ' . $e->getMessage();
 						}
 					}
 
@@ -351,7 +360,114 @@ class PushWrapper {
 				}
 				break;
 			case 3: // windows phone
-				$response['error'] = 'Not implemented';
+				// Get Access Token
+				if(PUSH_WNS_CLIENT_ID == '' || PUSH_WNS_CLIENT_SECRET == '') {
+					$response['error'] = 'Missing value for PUSH_WNS_CLIENT_ID or PUSH_WNS_CLIENT_SECRET';
+				} else {
+					$ch = curl_init('https://login.live.com/accesstoken.srf');
+					curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+					curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+					curl_setopt($ch, CURLOPT_POST, 1);
+					curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
+					curl_setopt($ch, CURLOPT_POSTFIELDS, 'grant_type=client_credentials&client_id=' . PUSH_WNS_CLIENT_ID . '&client_secret=' . PUSH_WNS_CLIENT_SECRET . '&scope=notify.windows.com');
+					curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+					// curl_setopt($ch, CURL_IPRESOLVE_V4, true);
+					curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+					$oauth = curl_exec($ch);
+					if($oauth === false) {
+						$response['error'] = 'Curl failed: ' . curl_error($ch);
+					}
+					curl_close($ch);
+					
+					if(!isset($response['error'])) {
+						$oauth = json_decode($oauth);
+						if(isset($oauth->error)){
+							$response['error'] = $oauth->error_description;
+						} elseif (isset($oauth->access_token)) {
+							if(!empty($options)) {
+								if(isset($options['alert'])) {
+									$body = $options['alert'];
+								}
+								
+								if(isset($options['title'])) {
+									$title = $options['title'];
+								}
+								
+								if(isset($options['body'])) {
+									$body = $options['body'];
+								}
+							}
+							
+							if($title == '') {
+								$title = PUSH_ALERT_TITLE;
+							}
+							
+							if($body == '') {
+								$body = PUSH_ALERT_STRING;
+							}
+							
+							$wns  = "<?xml version=\"1.0\" encoding=\"utf-8\"?><wp:Notification xmlns:wp=\"WPNotification\"><wp:Toast>".
+											"<wp:Text1>".$title."</wp:Text1>".
+											"<wp:Text2>".$body."</wp:Text2>".
+											"<wp:Param>/MainPage.xaml</wp:Param>".
+									   "</wp:Toast></wp:Notification>"
+							$response['payload'] = $wns;
+							
+							$headers = array(
+								'Content-Type: text/xml',
+								"Content-Type: text/xml",
+								"X-WNS-Type: wns/toast",
+								"Content-Length: " . strlen($wns),
+								"X-NotificationClass:2",
+								"X-WindowsPhone-Target: toast",
+								"Authorization: Bearer " . $oauth->access_token
+							);
+							
+							if($options['tile'] != ''){
+								array_push($headers, "X-WNS-Tag: " . $options['tile']);
+							}
+							
+							$ch = curl_init($deviceid);
+							# Tiles: http://msdn.microsoft.com/en-us/library/windows/apps/xaml/hh868263.aspx
+							# http://msdn.microsoft.com/en-us/library/windows/apps/hh465435.aspx
+							curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+							curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+							curl_setopt($ch, CURLOPT_POST, 1);
+							curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+							curl_setopt($ch, CURLOPT_POSTFIELDS, "$payload");
+							curl_setopt($ch, CURLOPT_VERBOSE, 1);
+							curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+							// curl_setopt($ch, CURL_IPRESOLVE_V4, true);
+							curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); 			
+							$result = curl_exec($ch);
+							
+							if($result === false) {
+								
+							} else {
+								$http_response = curl_getinfo( $ch );
+								$code = $http_response['http_code'];
+								
+								if($code == 200){
+									$response['success'] = true;
+									$response['details'] = 'Push sent successfully';
+								} else if($code == 401) {
+									$response['success'] = false;
+									$response['details'] = 'Push failed to send. Please retry.';
+								} else if($code == 410 || $code == 404) {
+									$response['error'] = 'Expired or invalid token (Uri) [' . $code . ']';
+								} else {
+									$response['error'] = 'An unknown error has occurred [' . $code . ']';
+								}
+								
+							}
+							
+							curl_close($ch);
+							
+						} else {
+							$response['error'] = 'Invalid response from OAuth server.';
+						}
+					}
+				}
 				break;
 				
 			case 4: // windows device
