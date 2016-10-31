@@ -15,6 +15,7 @@ Currently Implemented
 * Android - Firebase Notification (FCM)
 * Apple - iOS
 * Blackberry
+* Microsoft - Windows Phone (WNS)
 
 How to use
 ---
@@ -38,7 +39,9 @@ How to use
 * title - The title to appear. iOS and Android only.
 * sound - The sound file to play (must be included in the app).  iOS and Android only.
 * vibrate - Force the device to vibrate on notification. Android only.
+* tile - Send a value for Tile display. WNS only.
 * custom - Any custom parameters. Should be in the form of named based array Array(key=>value). iOS and Android.
+
 
 The parameter `custom` if specified will show inside the `msg` value in iOS payloads, and in the `data` value in Android payloads.
 
